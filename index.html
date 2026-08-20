@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FileGetUrl Extractor</title>
+
+<style>
+*{
+    box-sizing:border-box;
+    font-family:Segoe UI, Arial, sans-serif;
+}
+
+body{
+    background:#f5f7fb;
+    margin:0;
+    padding:30px;
+}
+
+.container{
+    max-width:1200px;
+    margin:auto;
+    background:#fff;
+    border-radius:12px;
+    padding:25px;
+    box-shadow:0 4px 12px rgba(0,0,0,.1);
+}
+
+h1{
+    margin-top:0;
+    color:#333;
+}
+
+label{
+    display:block;
+    margin-bottom:8px;
+    font-weight:600;
+}
+
+textarea{
+    width:100%;
+    min-height:250px;
+    resize:vertical;
+    padding:12px;
+    border:1px solid #ccc;
+    border-radius:8px;
+    font-size:14px;
+}
+
+#output{
+    min-height:120px;
+    background:#fafafa;
+}
+
+.buttons{
+    margin-top:15px;
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+}
+
+button{
+    border:none;
+    padding:12px 18px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+}
+
+.convert{
+    background:#0078d7;
+    color:white;
+}
+
+.copy{
+    background:#28a745;
+    color:white;
+}
+
+.open{
+    background:#ff9800;
+    color:white;
+}
+
+.clear{
+    background:#6c757d;
+    color:white;
+}
+
+.status{
+    margin-top:15px;
+    font-weight:600;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+    <h1>Cleaner Link by Rizal</h1>
+
+    <label>Input Raw JSON / Text</label>
+    <textarea id="input" placeholder="Paste JSON SharePoint atau teks mentah di sini..."></textarea>
+
+    <div class="buttons">
+        <button class="convert" onclick="convertText()">Convert</button>
+        <button class="copy" onclick="copyResult()">Copy Hasil</button>
+        <button class="open" onclick="openUrl()">Buka URL</button>
+        <button class="clear" onclick="clearAll()">Clear</button>
+    </div>
+
+    <br>
+
+    <label>Hasil</label>
+    <textarea id="output" readonly></textarea>
+
+    <div id="status" class="status"></div>
+
+</div>
+
+<script>
+
+function cleanText(text){
+    return text
+        .replace(/\\\//g, "/")
+        .replace(/\\\\u0026/g, "&")
+        .replace(/\\u0026/g, "&")
+        .replace(/\\"/g, '"')
+        .replace(/\\$/, ""); // hapus \ jika berada di akhir teks
+}
+
+function convertText(){
+
+    const raw = document.getElementById("input").value.trim();
+
+    if(!raw){
+        setStatus("Masukkan data terlebih dahulu CUYY !!.");
+        return;
+    }
+
+    let result = "";
+
+    // Cari FileGetUrl
+    let match =
+        raw.match(/"FileGetUrl":"([^"]+)"/) ||
+        raw.match(/FileGetUrl\\?"\s*:\s*\\?"([^"]+)/);
+
+    if(match){
+        result = match[1];
+        result = cleanText(result);
+        setStatus("Berhasil Convert Cuyy.");
+    }else{
+        result = cleanText(raw);
+        setStatus("yah Belum Berhasil di convert nih cuy :( Sorry ya");
+    }
+
+    document.getElementById("output").value = result;
+}
+
+function copyResult(){
+
+    const output = document.getElementById("output").value;
+
+    if(!output){
+        setStatus("Tidak ada hasil untuk dicopy nih CUYY !!.");
+        return;
+    }
+
+    navigator.clipboard.writeText(output)
+    .then(()=>{
+        setStatus("URL berhasil dicopy CUYY !!.");
+    })
+    .catch(()=>{
+        setStatus("yahh Gagal melakukan copy CUYY !!.");
+    });
+
+}
+
+function openUrl(){
+
+    const url = document.getElementById("output").value.trim();
+
+    if(!url){
+        setStatus("Belum ada URL.");
+        return;
+    }
+
+    window.open(url, "_blank");
+}
+
+function clearAll(){
+
+    document.getElementById("input").value = "";
+    document.getElementById("output").value = "";
+    document.getElementById("status").innerText = "";
+
+}
+
+function setStatus(msg){
+    document.getElementById("status").innerText = msg;
+}
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Dump halaman SharePoint/MCAS dapat berisi identitas dan data sesi.
+ggwp.html
+bookmark.html
+
+# File lokal sementara
+test
+*.har
+*.log
+

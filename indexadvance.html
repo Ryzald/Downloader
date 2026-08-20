@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Direct Download Link — Advanced</title>
+<style>
+    * { box-sizing: border-box; font-family: "Segoe UI", Arial, sans-serif; }
+    body { margin: 0; padding: 30px; background: #f5f7fb; color: #263238; }
+    .container { max-width: 900px; margin: auto; padding: 26px; background: #fff; border-radius: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.1); }
+    h1 { margin: 0 0 8px; }
+    .hint { margin: 0 0 22px; color: #607d8b; line-height: 1.5; }
+    label { display: block; margin: 16px 0 8px; font-weight: 650; }
+    input, select { width: 100%; padding: 13px; border: 1px solid #c7cdd3; border-radius: 8px; background: #fff; font-size: 15px; }
+    input:focus, select:focus { outline: 2px solid #90caf9; border-color: #1976d2; }
+    .buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+    button { border: 0; padding: 12px 17px; border-radius: 8px; cursor: pointer; font-weight: 650; color: #fff; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .convert { background: #1976d2; }
+    .download { background: #e67e22; }
+    .copy { background: #299447; }
+    .clear { background: #65727c; }
+    .status { min-height: 24px; margin-top: 16px; font-weight: 600; line-height: 1.45; }
+    .ok { color: #187638; } .warn { color: #a45b00; } .error { color: #b3261e; }
+    .note { margin-top: 22px; padding: 13px; border-left: 4px solid #90a4ae; background: #f6f8f9; font-size: 13px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main class="container">
+    <h1>Cleaner Link Advanced by Rizal</h1>
+    <p class="hint">Pilih jenis file, paste link SharePoint/OneDrive, lalu klik <b>Buat Link Download</b>. Tidak perlu membuka DevTools.</p>
+
+    <label for="fileType">Jenis file</label>
+    <select id="fileType">
+        <option value="office">Excel / Word</option>
+        <option value="pdf">PDF</option>
+        <option value="zip">ZIP</option>
+    </select>
+
+    <label for="sourceUrl">Link asli</label>
+    <input id="sourceUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://..." autofocus>
+
+    <div class="buttons">
+        <button id="convertBtn" class="convert" type="button">Buat Link Download</button>
+        <button id="downloadBtn" class="download" type="button">Buka / Download</button>
+        <button id="copyBtn" class="copy" type="button">Copy Hasil</button>
+        <button id="clearBtn" class="clear" type="button">Clear</button>
+    </div>
+
+    <label for="resultUrl">Hasil link download</label>
+    <input id="resultUrl" type="text" readonly placeholder="Hasil akan muncul di sini">
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <div class="note">
+        Untuk file yang hanya bisa diakses setelah login, browser mungkin tetap meminta Anda login ke Microsoft. Hak akses file tidak dapat dilewati oleh halaman ini.
+    </div>
+</main>
+
+<script>
+"use strict";
+
+const source = document.getElementById("sourceUrl");
+const result = document.getElementById("resultUrl");
+const convertBtn = document.getElementById("convertBtn");
+const fileType = document.getElementById("fileType");
+
+function setStatus(message, kind = "") {
+    const status = document.getElementById("status");
+    status.textContent = message;
+    status.className = "status " + kind;
+}
+
+function normalizeInput(value) {
+    let text = value.trim().replace(/&amp;/gi, "&").replace(/\\\//g, "/");
+    if (!/^https?:\/\//i.test(text)) throw new Error("Link harus diawali http:// atau https://");
+    return new URL(text);
+}
+
+function makeDirectUrl(url) {
+    const host = url.hostname.toLowerCase();
+
+    // Link sharing SharePoint / OneDrive for Business mendukung parameter download=1.
+    if (host.endsWith("sharepoint.com") || host.endsWith("onedrive.com") || host === "1drv.ms") {
+        url.searchParams.delete("web");
+        url.searchParams.delete("action");
+        url.searchParams.set("download", "1");
+        return url.href;
+    }
+
+    // URL Microsoft Office viewer biasa.
+    if (host === "view.officeapps.live.com") {
+        const embedded = url.searchParams.get("src");
+        if (embedded) return makeDirectUrl(new URL(embedded));
+    }
+
+    // Server lain: pertahankan URL dan tambahkan petunjuk download yang umum.
+    url.searchParams.set("download", "1");
+    return url.href;
+}
+
+function makeZipUrl(url) {
+    const filePath = url.searchParams.get("id");
+    const sourceUrl = url.searchParams.get("SourceUrl");
+
+    // URL sudah merupakan endpoint download ZIP siap pakai.
+    if (/\/download\.aspx$/i.test(url.pathname) && /\.zip$/i.test(sourceUrl || "")) {
+        return url.href;
+    }
+
+    // Link onedrive.aspx menyimpan lokasi ZIP dalam parameter id.
+    // Endpoint download.aspx mengunduh file tanpa membuka preview OneDrive.
+    if (filePath && /\.zip$/i.test(filePath)) {
+        // Pertahankan domain MCAS jika link asal melewati gateway keamanan.
+        const download = new URL("/_layouts/15/download.aspx", url.origin);
+        download.searchParams.set("SourceUrl", filePath);
+        const mcasTsid = url.searchParams.get("McasTsid");
+        if (mcasTsid) download.searchParams.set("McasTsid", mcasTsid);
+        return download.href;
+    }
+
+    return makeDirectUrl(url);
+}
+
+function extractFileGetUrl(text) {
+    const patterns = [
+        /["']FileGetUrl["']\s*:\s*["']((?:\\.|[^"'])+)["']/i,
+        /FileGetUrl\\?["']\s*:\s*\\?["']([^"']+)/i
+    ];
+    for (const pattern of patterns) {
+        const match = text.match(pattern);
+        if (match) {
+            return match[1]
+                .replace(/\\u0026/gi, "&")
+                .replace(/\\\//g, "/")
+                .replace(/\\"/g, '"');
+        }
+    }
+    return "";
+}
+
+function decodeResponseUrl(value) {
+    let decoded = value
+        .replace(/&amp;/gi, "&")
+        .replace(/\\u0026/gi, "&")
+        .replace(/\\u003d/gi, "=")
+        .replace(/\\\//g, "/")
+        .replace(/\\"/g, '"');
+    try { decoded = decodeURIComponent(decoded); } catch (_) {}
+    return decoded;
+}
+
+function extractPdfUrl(text) {
+    // Prioritaskan properti URL yang tipenya PDF pada respons SharePoint.
+    const propertyPatterns = [
+        /["'](?:FileGetUrl|downloadUrl|url|sourceUrl)["']\s*:\s*["']((?:\\.|[^"'])+?\.pdf(?:\?[^"']*)?)["']/ig,
+        /(https?:\\?\/\\?\/[^\s"'<>]+?\.pdf(?:\?[^\s"'<>]*)?)/ig
+    ];
+
+    for (const pattern of propertyPatterns) {
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            const candidate = decodeResponseUrl(match[1]);
+            if (/^https?:\/\//i.test(candidate)) return candidate;
+        }
+    }
+
+    // Sebagian respons menandai application/pdf tetapi URL-nya tidak berakhiran .pdf.
+    if (/application\/pdf|["']type["']\s*:\s*["']pdf["']/i.test(text)) {
+        return extractFileGetUrl(text);
+    }
+    return "";
+}
+
+function extractZipUrl(text) {
+    const patterns = [
+        /["'](?:FileGetUrl|downloadUrl|url|sourceUrl)["']\s*:\s*["']((?:\\.|[^"'])+?\.zip(?:\?[^"']*)?)["']/ig,
+        /(https?:\\?\/\\?\/[^\s"'<>]+?\.zip(?:\?[^\s"'<>]*)?)/ig
+    ];
+    for (const pattern of patterns) {
+        let match;
+        while ((match = pattern.exec(text)) !== null) {
+            const candidate = decodeResponseUrl(match[1]);
+            if (/^https?:\/\//i.test(candidate)) return candidate;
+        }
+    }
+    if (/application\/(?:zip|x-zip-compressed)|["']type["']\s*:\s*["']zip["']/i.test(text)) {
+        return extractFileGetUrl(text);
+    }
+    return "";
+}
+
+async function convert() {
+    result.value = "";
+    let parsed;
+    try {
+        parsed = normalizeInput(source.value);
+    } catch (error) {
+        setStatus(error.message, "error");
+        return;
+    }
+
+    convertBtn.disabled = true;
+    setStatus("Sedang menyiapkan link...", "warn");
+    const direct = fileType.value === "zip"
+        ? makeZipUrl(new URL(parsed.href))
+        : makeDirectUrl(new URL(parsed.href));
+
+    // Untuk ZIP dari halaman onedrive.aspx, parameter id sudah cukup untuk
+    // membentuk endpoint download dan tidak perlu membaca respons halaman.
+    if (fileType.value === "zip" && parsed.searchParams.get("id")) {
+        result.value = direct;
+        setStatus("Link download ZIP berhasil dibuat dari path file SharePoint cuy.", "ok");
+        convertBtn.disabled = false;
+        return;
+    }
+
+    // Coba ekstrak FileGetUrl jika endpoint mengizinkan pembacaan lintas-domain.
+    // Jika ditolak CORS, link download=1 tetap menjadi hasil yang dapat digunakan.
+    try {
+        const response = await fetch(parsed.href, { credentials: "include", redirect: "follow" });
+        if (response.ok) {
+            const responseText = await response.text();
+            const extractedUrl = fileType.value === "pdf"
+                ? extractPdfUrl(responseText)
+                : fileType.value === "zip"
+                    ? extractZipUrl(responseText)
+                    : extractFileGetUrl(responseText);
+            result.value = extractedUrl || direct;
+            if (extractedUrl) {
+                setStatus(fileType.value === "pdf"
+                    ? "URL PDF ditemukan. File siap dibuka atau didownload."
+                    : fileType.value === "zip"
+                        ? "URL ZIP ditemukan. File siap didownload."
+                        : "FileGetUrl Excel/Word ditemukan. Link siap digunakan.", "ok");
+            } else {
+                setStatus("Link download berhasil dibuat.", "ok");
+            }
+        } else {
+            result.value = direct;
+            setStatus("Link download dibuat. Server mengembalikan status " + response.status + ".", "warn");
+        }
+    } catch (_) {
+        result.value = direct;
+        setStatus("Link download berhasil dibuat Cuyy", "ok");
+    } finally {
+        convertBtn.disabled = false;
+    }
+}
+
+async function copyResult() {
+    if (!result.value) return setStatus("Buat link download terlebih dahulu.", "error");
+    try {
+        await navigator.clipboard.writeText(result.value);
+        setStatus("Link berhasil dicopy.", "ok");
+    } catch (_) {
+        result.select();
+        document.execCommand("copy");
+        setStatus("Link berhasil dicopy.", "ok");
+    }
+}
+
+function openDownload() {
+    if (!result.value) return setStatus("Buat link download terlebih dahulu.", "error");
+    const link = document.createElement("a");
+    link.href = result.value;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setStatus("Link dibuka. Jika file privat, selesaikan login Microsoft pada tab baru.", "ok");
+}
+
+convertBtn.addEventListener("click", convert);
+document.getElementById("copyBtn").addEventListener("click", copyResult);
+document.getElementById("downloadBtn").addEventListener("click", openDownload);
+document.getElementById("clearBtn").addEventListener("click", () => {
+    source.value = "";
+    result.value = "";
+    fileType.value = "office";
+    setStatus("");
+    source.focus();
+});
+source.addEventListener("keydown", event => {
+    if (event.key === "Enter") convert();
+});
+</script>
+</body>
+</html>
