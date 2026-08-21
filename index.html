@@ -29,7 +29,7 @@
 <body>
 <main class="container">
     <h1>Cleaner Link Advanced by Rizal</h1>
-    <p class="hint">Excel/Word dan PDF memakai response mentah. ZIP memakai link SharePoint/OneDrive.</p>
+    <p class="hint">Excel/Word menerima response mentah atau link Doc.aspx. PDF memakai response mentah. ZIP memakai link SharePoint/OneDrive.</p>
 
     <label for="fileType">Jenis file</label>
     <select id="fileType">
@@ -39,7 +39,7 @@
     </select>
 
     <label id="sourceLabel" for="sourceUrl">Response mentah Excel / Word</label>
-    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste response yang berisi FileUrlNoAuth atau FileGetUrl di sini..." autofocus></textarea>
+    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste response atau link Doc.aspx Excel/Word di sini..." autofocus></textarea>
 
     <div class="buttons">
         <button id="convertBtn" class="convert" type="button">Buat Link Download</button>
@@ -141,6 +141,32 @@ function extractFileGetUrl(text) {
     return "";
 }
 
+function makeOfficeUrlFromDocLink(text) {
+    let url;
+    try {
+        url = normalizeInput(text);
+    } catch (_) {
+        return "";
+    }
+
+    const sourceDoc = (url.searchParams.get("sourcedoc") || "")
+        .replace(/[{}]/g, "")
+        .trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sourceDoc)) {
+        return "";
+    }
+
+    // Ambil lokasi site dari path seperti /:x:/r/personal/nama/_layouts/15/Doc.aspx.
+    const siteMatch = url.pathname.match(/\/(personal\/[^/]+|sites\/[^/]+)/i);
+    const sitePath = siteMatch ? "/" + siteMatch[1] : "";
+    const download = new URL(sitePath + "/_layouts/15/download.aspx", url.origin);
+    download.searchParams.set("UniqueId", sourceDoc);
+    download.searchParams.set("Translate", "false");
+    const mcasTsid = url.searchParams.get("McasTsid");
+    if (mcasTsid) download.searchParams.set("McasTsid", mcasTsid);
+    return download.href;
+}
+
 function decodeResponseUrl(value) {
     return value
         .replace(/&amp;/gi, "&")
@@ -202,8 +228,8 @@ async function convert() {
     setStatus("Sedang menyiapkan link...", "warn");
     try {
         if (fileType.value === "office") {
-            const officeUrl = extractFileGetUrl(raw);
-            if (!officeUrl) throw new Error("FileUrlNoAuth atau FileGetUrl tidak ditemukan pada response.");
+            const officeUrl = extractFileGetUrl(raw) || makeOfficeUrlFromDocLink(raw);
+            if (!officeUrl) throw new Error("FileUrlNoAuth, FileGetUrl, atau sourcedoc tidak ditemukan.");
             result.value = decodeResponseUrl(officeUrl);
             setStatus("URL download Excel/Word berhasil ditemukan.", "ok");
         } else if (fileType.value === "pdf") {
@@ -267,7 +293,7 @@ fileType.addEventListener("change", () => {
     setStatus("");
     if (fileType.value === "office") {
         label.textContent = "Response mentah Excel / Word";
-        source.placeholder = "Paste response yang berisi FileUrlNoAuth atau FileGetUrl di sini...";
+        source.placeholder = "Paste response atau link Doc.aspx Excel/Word di sini...";
     } else if (fileType.value === "pdf") {
         label.textContent = "Response mentah PDF";
         source.placeholder = "Paste response yang berisi URL atau type PDF di sini...";
