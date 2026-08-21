@@ -39,7 +39,7 @@
     </select>
 
     <label id="sourceLabel" for="sourceUrl">Response mentah Excel / Word</label>
-    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste response yang berisi FileGetUrl di sini..." autofocus></textarea>
+    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste response yang berisi FileUrlNoAuth atau FileGetUrl di sini..." autofocus></textarea>
 
     <div class="buttons">
         <button id="convertBtn" class="convert" type="button">Buat Link Download</button>
@@ -124,6 +124,8 @@ function makeZipUrl(url) {
 
 function extractFileGetUrl(text) {
     const patterns = [
+        /["']FileUrlNoAuth["']\s*:\s*["']((?:\\.|[^"'])+)["']/i,
+        /FileUrlNoAuth\\?["']\s*:\s*\\?["']([^"']+)/i,
         /["']FileGetUrl["']\s*:\s*["']((?:\\.|[^"'])+)["']/i,
         /FileGetUrl\\?["']\s*:\s*\\?["']([^"']+)/i
     ];
@@ -140,14 +142,12 @@ function extractFileGetUrl(text) {
 }
 
 function decodeResponseUrl(value) {
-    let decoded = value
+    return value
         .replace(/&amp;/gi, "&")
         .replace(/\\u0026/gi, "&")
         .replace(/\\u003d/gi, "=")
         .replace(/\\\//g, "/")
         .replace(/\\"/g, '"');
-    try { decoded = decodeURIComponent(decoded); } catch (_) {}
-    return decoded;
 }
 
 function extractPdfUrl(text) {
@@ -203,9 +203,9 @@ async function convert() {
     try {
         if (fileType.value === "office") {
             const officeUrl = extractFileGetUrl(raw);
-            if (!officeUrl) throw new Error("FileGetUrl tidak ditemukan pada response.");
+            if (!officeUrl) throw new Error("FileUrlNoAuth atau FileGetUrl tidak ditemukan pada response.");
             result.value = decodeResponseUrl(officeUrl);
-            setStatus("FileGetUrl Excel/Word berhasil ditemukan.", "ok");
+            setStatus("URL download Excel/Word berhasil ditemukan.", "ok");
         } else if (fileType.value === "pdf") {
             const pdfUrl = extractPdfUrl(raw);
             if (!pdfUrl) throw new Error("URL atau tipe PDF tidak ditemukan pada response.");
@@ -267,7 +267,7 @@ fileType.addEventListener("change", () => {
     setStatus("");
     if (fileType.value === "office") {
         label.textContent = "Response mentah Excel / Word";
-        source.placeholder = "Paste response yang berisi FileGetUrl di sini...";
+        source.placeholder = "Paste response yang berisi FileUrlNoAuth atau FileGetUrl di sini...";
     } else if (fileType.value === "pdf") {
         label.textContent = "Response mentah PDF";
         source.placeholder = "Paste response yang berisi URL atau type PDF di sini...";
