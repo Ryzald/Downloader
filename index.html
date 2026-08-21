@@ -123,14 +123,21 @@ function makeZipUrl(url) {
 }
 
 function extractFileGetUrl(text) {
+    // Response HTML SharePoint dapat menyimpan JSON sebagai entity HTML,
+    // unicode escape, atau string JavaScript dengan quote yang di-escape.
+    const normalized = text
+        .replace(/&quot;|&#34;|&#x22;/gi, '"')
+        .replace(/&amp;/gi, "&")
+        .replace(/\\u0022/gi, '"')
+        .replace(/\\u003a/gi, ":")
+        .replace(/\\+"/g, '"');
+
     const patterns = [
-        /["']FileUrlNoAuth["']\s*:\s*["']((?:\\.|[^"'])+)["']/i,
-        /FileUrlNoAuth\\?["']\s*:\s*\\?["']([^"']+)/i,
-        /["']FileGetUrl["']\s*:\s*["']((?:\\.|[^"'])+)["']/i,
-        /FileGetUrl\\?["']\s*:\s*\\?["']([^"']+)/i
+        /["']?FileUrlNoAuth["']?\s*:\s*["']([^"']+)["']/i,
+        /["']?FileGetUrl["']?\s*:\s*["']([^"']+)["']/i
     ];
     for (const pattern of patterns) {
-        const match = text.match(pattern);
+        const match = normalized.match(pattern);
         if (match) {
             return match[1]
                 .replace(/\\u0026/gi, "&")
