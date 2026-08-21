@@ -11,8 +11,9 @@
     h1 { margin: 0 0 8px; }
     .hint { margin: 0 0 22px; color: #607d8b; line-height: 1.5; }
     label { display: block; margin: 16px 0 8px; font-weight: 650; }
-    input, select { width: 100%; padding: 13px; border: 1px solid #c7cdd3; border-radius: 8px; background: #fff; font-size: 15px; }
-    input:focus, select:focus { outline: 2px solid #90caf9; border-color: #1976d2; }
+    input, textarea, select { width: 100%; padding: 13px; border: 1px solid #c7cdd3; border-radius: 8px; background: #fff; font-size: 15px; }
+    textarea { min-height: 210px; resize: vertical; }
+    input:focus, textarea:focus, select:focus { outline: 2px solid #90caf9; border-color: #1976d2; }
     .buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
     button { border: 0; padding: 12px 17px; border-radius: 8px; cursor: pointer; font-weight: 650; color: #fff; }
     button:disabled { opacity: .55; cursor: wait; }
@@ -28,7 +29,7 @@
 <body>
 <main class="container">
     <h1>Cleaner Link Advanced by Rizal</h1>
-    <p class="hint">Pilih jenis file, paste link SharePoint/OneDrive, lalu klik <b>Buat Link Download</b>. Tidak perlu membuka DevTools.</p>
+    <p class="hint">Excel/Word dan PDF memakai response mentah. ZIP memakai link SharePoint/OneDrive.</p>
 
     <label for="fileType">Jenis file</label>
     <select id="fileType">
@@ -37,12 +38,12 @@
         <option value="zip">ZIP</option>
     </select>
 
-    <label for="sourceUrl">Link asli</label>
-    <input id="sourceUrl" type="url" inputmode="url" autocomplete="off" placeholder="https://..." autofocus>
+    <label id="sourceLabel" for="sourceUrl">Response mentah Excel / Word</label>
+    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste response yang berisi FileGetUrl di sini..." autofocus></textarea>
 
     <div class="buttons">
         <button id="convertBtn" class="convert" type="button">Buat Link Download</button>
-        <button id="downloadBtn" class="download" type="button">Download File</button>
+        <button id="downloadBtn" class="download" type="button">Buka / Download</button>
         <button id="copyBtn" class="copy" type="button">Copy Hasil</button>
         <button id="clearBtn" class="clear" type="button">Clear</button>
     </div>
@@ -96,28 +97,6 @@ function makeDirectUrl(url) {
     // Server lain: pertahankan URL dan tambahkan petunjuk download yang umum.
     url.searchParams.set("download", "1");
     return url.href;
-}
-
-function makeOfficeUrl(url) {
-    const filePath = url.searchParams.get("id");
-    const sourceUrl = url.searchParams.get("SourceUrl");
-    const officePattern = /\.(?:xlsx?|xlsm|docx?|docm|pptx?|pptm|csv)$/i;
-
-    // Endpoint download.aspx yang sudah siap digunakan.
-    if (/\/download\.aspx$/i.test(url.pathname) && officePattern.test(sourceUrl || "")) {
-        return url.href;
-    }
-
-    // Link preview OneDrive/SharePoint menyimpan path file dalam parameter id.
-    if (filePath && officePattern.test(filePath)) {
-        const download = new URL("/_layouts/15/download.aspx", url.origin);
-        download.searchParams.set("SourceUrl", filePath);
-        const mcasTsid = url.searchParams.get("McasTsid");
-        if (mcasTsid) download.searchParams.set("McasTsid", mcasTsid);
-        return download.href;
-    }
-
-    return makeDirectUrl(url);
 }
 
 function makeZipUrl(url) {
@@ -213,67 +192,32 @@ function extractZipUrl(text) {
 
 async function convert() {
     result.value = "";
-    let parsed;
-    try {
-        parsed = normalizeInput(source.value);
-    } catch (error) {
-        setStatus(error.message, "error");
+    const raw = source.value.trim();
+    if (!raw) {
+        setStatus("Masukkan response atau link terlebih dahulu.", "error");
         return;
     }
 
     convertBtn.disabled = true;
     setStatus("Sedang menyiapkan link...", "warn");
-    const direct = fileType.value === "zip"
-        ? makeZipUrl(new URL(parsed.href))
-        : fileType.value === "office"
-            ? makeOfficeUrl(new URL(parsed.href))
-            : makeDirectUrl(new URL(parsed.href));
-
-    // Untuk ZIP dari halaman onedrive.aspx, parameter id sudah cukup untuk
-    // membentuk endpoint download dan tidak perlu membaca respons halaman.
-    if (fileType.value === "zip" && parsed.searchParams.get("id")) {
-        result.value = direct;
-        setStatus("Link download ZIP berhasil dibuat dari path file SharePoint cuy.", "ok");
-        convertBtn.disabled = false;
-        return;
-    }
-
-    // Path file Office sudah dapat langsung dibentuk menjadi endpoint download.
-    if (fileType.value === "office" && parsed.searchParams.get("id")) {
-        result.value = direct;
-        setStatus("Link download Excel/Word berhasil dibuat. Klik Download File.", "ok");
-        convertBtn.disabled = false;
-        return;
-    }
-
-    // Coba ekstrak FileGetUrl jika endpoint mengizinkan pembacaan lintas-domain.
-    // Jika ditolak CORS, link download=1 tetap menjadi hasil yang dapat digunakan.
     try {
-        const response = await fetch(parsed.href, { credentials: "include", redirect: "follow" });
-        if (response.ok) {
-            const responseText = await response.text();
-            const extractedUrl = fileType.value === "pdf"
-                ? extractPdfUrl(responseText)
-                : fileType.value === "zip"
-                    ? extractZipUrl(responseText)
-                    : extractFileGetUrl(responseText);
-            result.value = extractedUrl || direct;
-            if (extractedUrl) {
-                setStatus(fileType.value === "pdf"
-                    ? "URL PDF ditemukan. File siap dibuka atau didownload."
-                    : fileType.value === "zip"
-                        ? "URL ZIP ditemukan. File siap didownload."
-                        : "FileGetUrl Excel/Word ditemukan. Link siap digunakan.", "ok");
-            } else {
-                setStatus("Link download berhasil dibuat.", "ok");
-            }
+        if (fileType.value === "office") {
+            const officeUrl = extractFileGetUrl(raw);
+            if (!officeUrl) throw new Error("FileGetUrl tidak ditemukan pada response.");
+            result.value = decodeResponseUrl(officeUrl);
+            setStatus("FileGetUrl Excel/Word berhasil ditemukan.", "ok");
+        } else if (fileType.value === "pdf") {
+            const pdfUrl = extractPdfUrl(raw);
+            if (!pdfUrl) throw new Error("URL atau tipe PDF tidak ditemukan pada response.");
+            result.value = pdfUrl;
+            setStatus("URL PDF berhasil ditemukan.", "ok");
         } else {
-            result.value = direct;
-            setStatus("Link download dibuat. Server mengembalikan status " + response.status + ".", "warn");
+            const parsed = normalizeInput(raw);
+            result.value = makeZipUrl(parsed);
+            setStatus("Link download ZIP berhasil dibuat.", "ok");
         }
-    } catch (_) {
-        result.value = direct;
-        setStatus("Link download berhasil dibuat Cuyy", "ok");
+    } catch (error) {
+        setStatus(error.message, "error");
     } finally {
         convertBtn.disabled = false;
     }
@@ -293,8 +237,14 @@ async function copyResult() {
 
 function openDownload() {
     if (!result.value) return setStatus("Buat link download terlebih dahulu.", "error");
-    setStatus("Download dimulai. Jika diminta, selesaikan login Microsoft.", "ok");
-    window.location.assign(result.value);
+    const link = document.createElement("a");
+    link.href = result.value;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setStatus("Link dibuka. Jika file privat, selesaikan login Microsoft pada tab baru.", "ok");
 }
 
 convertBtn.addEventListener("click", convert);
@@ -308,7 +258,24 @@ document.getElementById("clearBtn").addEventListener("click", () => {
     source.focus();
 });
 source.addEventListener("keydown", event => {
-    if (event.key === "Enter") convert();
+    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) convert();
+});
+fileType.addEventListener("change", () => {
+    const label = document.getElementById("sourceLabel");
+    source.value = "";
+    result.value = "";
+    setStatus("");
+    if (fileType.value === "office") {
+        label.textContent = "Response mentah Excel / Word";
+        source.placeholder = "Paste response yang berisi FileGetUrl di sini...";
+    } else if (fileType.value === "pdf") {
+        label.textContent = "Response mentah PDF";
+        source.placeholder = "Paste response yang berisi URL atau type PDF di sini...";
+    } else {
+        label.textContent = "Link SharePoint / OneDrive ZIP";
+        source.placeholder = "Paste link file ZIP di sini...";
+    }
+    source.focus();
 });
 </script>
 </body>
