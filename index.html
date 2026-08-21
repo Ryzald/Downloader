@@ -29,7 +29,7 @@
 <body>
 <main class="container">
     <h1>Cleaner Link Advanced by Rizal</h1>
-    <p class="hint">Excel/Word menerima response mentah atau link Doc.aspx. PDF memakai response mentah. ZIP memakai link SharePoint/OneDrive.</p>
+    <p class="hint">Excel/Word menerima HTML response atau link Doc.aspx. PDF dan ZIP cukup memakai link SharePoint/OneDrive.</p>
 
     <label for="fileType">Jenis file</label>
     <select id="fileType">
@@ -174,6 +174,42 @@ function makeOfficeUrlFromDocLink(text) {
     return download.href;
 }
 
+function makePdfUrlFromLink(text) {
+    let url;
+    try {
+        url = normalizeInput(text);
+    } catch (_) {
+        return "";
+    }
+
+    // Link preview Doc.aspx memakai sourcedoc; gunakan pembentuk URL yang sama.
+    const fromSourceDoc = makeOfficeUrlFromDocLink(text);
+    if (fromSourceDoc) return fromSourceDoc;
+
+    const uniqueId = (url.searchParams.get("UniqueId") || "")
+        .replace(/[{}]/g, "")
+        .trim();
+    const siteMatch = url.pathname.match(/\/(personal\/[^/]+|sites\/[^/]+)/i);
+    const sitePath = siteMatch ? "/" + siteMatch[1] : "";
+
+    // Bersihkan parameter sesi MCAS dan buat ulang hanya dari ID file.
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uniqueId)) {
+        const download = new URL(sitePath + "/_layouts/15/download.aspx", url.origin);
+        download.searchParams.set("UniqueId", uniqueId);
+        download.searchParams.set("Translate", "false");
+        return download.href;
+    }
+
+    // Link daftar/preview yang menyimpan path PDF dalam parameter id.
+    const filePath = url.searchParams.get("id");
+    if (filePath && /\.pdf$/i.test(filePath)) {
+        const download = new URL(sitePath + "/_layouts/15/download.aspx", url.origin);
+        download.searchParams.set("SourceUrl", filePath);
+        return download.href;
+    }
+    return "";
+}
+
 function decodeResponseUrl(value) {
     return value
         .replace(/&amp;/gi, "&")
@@ -240,10 +276,10 @@ async function convert() {
             result.value = decodeResponseUrl(officeUrl);
             setStatus("URL download Excel/Word berhasil ditemukan.", "ok");
         } else if (fileType.value === "pdf") {
-            const pdfUrl = extractPdfUrl(raw);
-            if (!pdfUrl) throw new Error("URL atau tipe PDF tidak ditemukan pada response.");
+            const pdfUrl = makePdfUrlFromLink(raw);
+            if (!pdfUrl) throw new Error("UniqueId, sourcedoc, atau path file PDF tidak ditemukan pada link.");
             result.value = pdfUrl;
-            setStatus("URL PDF berhasil ditemukan.", "ok");
+            setStatus("Link download PDF berhasil dibuat.", "ok");
         } else {
             const parsed = normalizeInput(raw);
             result.value = makeZipUrl(parsed);
@@ -302,8 +338,8 @@ fileType.addEventListener("change", () => {
         label.textContent = "Response mentah Excel / Word";
         source.placeholder = "Paste response atau link Doc.aspx Excel/Word di sini...";
     } else if (fileType.value === "pdf") {
-        label.textContent = "Response mentah PDF";
-        source.placeholder = "Paste response yang berisi URL atau type PDF di sini...";
+        label.textContent = "Link PDF SharePoint / OneDrive";
+        source.placeholder = "Paste link PDF atau link preview Doc.aspx di sini...";
     } else {
         label.textContent = "Link SharePoint / OneDrive ZIP";
         source.placeholder = "Paste link file ZIP di sini...";
