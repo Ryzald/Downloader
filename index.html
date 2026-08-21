@@ -203,7 +203,10 @@ function makePdfUrlFromLink(text) {
     // Link daftar/preview yang menyimpan path PDF dalam parameter id.
     const filePath = url.searchParams.get("id");
     if (filePath && /\.pdf$/i.test(filePath)) {
-        const download = new URL(sitePath + "/_layouts/15/download.aspx", url.origin);
+        // Pada link /my, lokasi personal site hanya terdapat di parameter id.
+        const pathSiteMatch = filePath.match(/^\/(personal\/[^/]+|sites\/[^/]+)/i);
+        const fileSitePath = pathSiteMatch ? "/" + pathSiteMatch[1] : sitePath;
+        const download = new URL(fileSitePath + "/_layouts/15/download.aspx", url.origin);
         download.searchParams.set("SourceUrl", filePath);
         return download.href;
     }
