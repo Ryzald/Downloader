@@ -29,21 +29,14 @@
 <body>
 <main class="container">
     <h1>Cleaner Link Advanced by Rizal</h1>
-    <p class="hint">Excel/Word menerima HTML response atau link Doc.aspx. PDF dan ZIP cukup memakai link SharePoint/OneDrive.</p>
+    <p class="hint">Paste seluruh HTML/JSON response dari DevTools, lalu aplikasi akan mengambil URL download file secara otomatis.</p>
 
-    <label for="fileType">Jenis file</label>
-    <select id="fileType">
-        <option value="office">Excel / Word</option>
-        <option value="pdf">PDF</option>
-        <option value="zip">ZIP</option>
-    </select>
-
-    <label id="sourceLabel" for="sourceUrl">Response mentah Excel / Word</label>
-    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste response atau link Doc.aspx Excel/Word di sini..." autofocus></textarea>
+    <label for="sourceUrl">HTML / JSON Response</label>
+    <textarea id="sourceUrl" autocomplete="off" placeholder="Paste seluruh isi Response di sini..." autofocus></textarea>
 
     <div class="buttons">
-        <button id="convertBtn" class="convert" type="button">Buat Link Download</button>
-        <button id="downloadBtn" class="download" type="button">Buka / Download</button>
+        <button id="convertBtn" class="convert" type="button">Extract Link Download</button>
+        <button id="downloadBtn" class="download" type="button">Download File</button>
         <button id="copyBtn" class="copy" type="button">Copy Hasil</button>
         <button id="clearBtn" class="clear" type="button">Clear</button>
     </div>
@@ -63,7 +56,6 @@
 const source = document.getElementById("sourceUrl");
 const result = document.getElementById("resultUrl");
 const convertBtn = document.getElementById("convertBtn");
-const fileType = document.getElementById("fileType");
 
 function setStatus(message, kind = "") {
     const status = document.getElementById("status");
@@ -262,32 +254,49 @@ function extractZipUrl(text) {
     return "";
 }
 
-async function convert() {
+function extractAnyDownloadUrl(text) {
+    // Urutan utama mengikuti field response SharePoint yang paling stabil.
+    const fieldUrl = extractFileGetUrl(text);
+    if (fieldUrl) return decodeResponseUrl(fieldUrl);
+
+    const fileUrl = extractPdfUrl(text) || extractZipUrl(text);
+    if (fileUrl) return decodeResponseUrl(fileUrl);
+
+    // Cadangan untuk URL download.aspx yang tertanam langsung dalam HTML.
+    const normalized = text
+        .replace(/&quot;|&#34;|&#x22;/gi, '"')
+        .replace(/&amp;/gi, "&")
+        .replace(/\\u0026/gi, "&")
+        .replace(/\\u003d/gi, "=")
+        .replace(/\\\//g, "/");
+    const match = normalized.match(/https?:\/\/[^\s"'<>]+\/download\.aspx\?[^\s"'<>]+/i);
+    if (!match) return "";
+
+    // Jangan keluarkan kredensial sesi yang mungkin tertanam di response.
+    try {
+        const url = new URL(match[0]);
+        url.searchParams.delete("McasUserAuth");
+        return url.href;
+    } catch (_) {
+        return "";
+    }
+}
+
+function convert() {
     result.value = "";
     const raw = source.value.trim();
     if (!raw) {
-        setStatus("Masukkan response atau link terlebih dahulu.", "error");
+        setStatus("Paste isi Response terlebih dahulu.", "error");
         return;
     }
 
     convertBtn.disabled = true;
-    setStatus("Sedang menyiapkan link...", "warn");
+    setStatus("Sedang mencari URL download...", "warn");
     try {
-        if (fileType.value === "office") {
-            const officeUrl = extractFileGetUrl(raw) || makeOfficeUrlFromDocLink(raw);
-            if (!officeUrl) throw new Error("FileUrlNoAuth, FileGetUrl, atau sourcedoc tidak ditemukan.");
-            result.value = decodeResponseUrl(officeUrl);
-            setStatus("URL download Excel/Word berhasil ditemukan.", "ok");
-        } else if (fileType.value === "pdf") {
-            const pdfUrl = makePdfUrlFromLink(raw);
-            if (!pdfUrl) throw new Error("UniqueId, sourcedoc, atau path file PDF tidak ditemukan pada link.");
-            result.value = pdfUrl;
-            setStatus("Link download PDF berhasil dibuat.", "ok");
-        } else {
-            const parsed = normalizeInput(raw);
-            result.value = makeZipUrl(parsed);
-            setStatus("Link download ZIP berhasil dibuat.", "ok");
-        }
+        const downloadUrl = extractAnyDownloadUrl(raw);
+        if (!downloadUrl) throw new Error("URL download tidak ditemukan di dalam Response.");
+        result.value = downloadUrl;
+        setStatus("URL download berhasil ditemukan. Klik Download File.", "ok");
     } catch (error) {
         setStatus(error.message, "error");
     } finally {
@@ -325,29 +334,11 @@ document.getElementById("downloadBtn").addEventListener("click", openDownload);
 document.getElementById("clearBtn").addEventListener("click", () => {
     source.value = "";
     result.value = "";
-    fileType.value = "office";
     setStatus("");
     source.focus();
 });
 source.addEventListener("keydown", event => {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) convert();
-});
-fileType.addEventListener("change", () => {
-    const label = document.getElementById("sourceLabel");
-    source.value = "";
-    result.value = "";
-    setStatus("");
-    if (fileType.value === "office") {
-        label.textContent = "Response mentah Excel / Word";
-        source.placeholder = "Paste response atau link Doc.aspx Excel/Word di sini...";
-    } else if (fileType.value === "pdf") {
-        label.textContent = "Link PDF SharePoint / OneDrive";
-        source.placeholder = "Paste link PDF atau link preview Doc.aspx di sini...";
-    } else {
-        label.textContent = "Link SharePoint / OneDrive ZIP";
-        source.placeholder = "Paste link file ZIP di sini...";
-    }
-    source.focus();
 });
 </script>
 </body>
